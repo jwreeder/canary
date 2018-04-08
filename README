@@ -1,0 +1,94 @@
+This is a REST version of the assignment. GET and POST are implemented.
+It was developed using Python 3.6.3 and was tested on the same. All bets
+are off if you are using a different version.
+
+Prereqs:
+
+A running instance of MongoDB must be available. The easiest way to do
+that is to use the official Docker image at hub.docker.com.
+After installing docker launch a MongoDB instance with the following
+command:
+
+  docker run --name mongo-canary -p 127.0.0.1:27017:27017/tcp mongo
+
+This will launch a MongoDB instance and map the default port 27017 to
+the loopback interface of the local machine where it can be used by
+the project. This of course assumes you have Docker installed.
+
+Create a directory to hold the project. Create a venv. Install pymongo.
+Copy the files or clone the git repo to the directory.
+
+Run the service by running:
+
+python server.py
+
+You should see a message stating that the service is running on port 5000.
+All requests and response codes will be written to the console window.
+
+curl is useful to the service when it is running, the following are examples
+of valid GET and POST requests:
+
+To insert data:
+curl -id '{"device_uuid": "12345678901234567890abcdefabcdef", "sensor_type": /
+     "temperature", "sensor_value": 52.0, "sensor_reading_time": 104}' -H 'Content-Type: /
+     application/json' -XPOST http://localhost:5000/sensors
+
+To query data:
+curl -XGET http://localhost:5000/sensors/12345678901234567890abcdefabcdef/temperature/1/12350
+
+The POST request will return the ObjectId of the newly created record
+in a JSON string and 201 HTTP response
+
+The GET request will return a JSON array containing the requested records
+or an empty array if there are none and 200 HTTP response
+
+HEAD, PUT, PATCH, DELETE are unimplemented but stubbed to return 405 rather than the
+default 500 Server Error. PATCH and PUT did not seem very useful since who would actually be
+updating the data. DELETE would be useful for purging old records to save storage space and
+would be simple to implement but wasn't mentioned in the spec. HEAD is effectively useless
+since it is mostly used to see if the data changed and it shouldn't.
+
+Validation of the data:
+
+All data for both GET and POST is fully validated using the following rules:
+
+GET:
+All fields are required: device_uuid, sensor_type, start_time, end_time.
+
+POST:
+Only the collection name (sensors) is accepted in the URL. The POST data must
+be a valid JSON string with device_uuid, sensor_type, sensor_value, sensor_reading_time
+
+
+Field validation:
+
+- device_uuid: must be a 32 character string consisting of valid hexadecimal characters.
+    Case insensitive for the alpha chars a-f
+- sensor_type: must be either 'temperature' or 'humidity', case-sensitive.
+- sensor_value: must be a float value or a string that can be converted to a valid float
+    in the range 0.0 - 100.0 inclusive
+- sensor_reading_time: must be a positive integer value or a string that can be converted
+    to a valid integer greater than or equal to zero. This appeared to be an epoch time
+    value and so I made that assumption. No conversion to a datetime is made.
+- start_time | end_time: same rules as sensor_reading_time
+
+For the POST request I would implement a buffer between the API endpoint and the persistent
+storage class to ensure that the back end would not be overwhelmed under peak load conditions
+or in the event of availability issues with the DB. The choice of MongoDB was somewhat
+arbitrary but was convenient because of the use of JSON to store the data natively. Plus
+it is well supported via PyMongo.
+
+I created a class from HTTPServer to handle multiple concurrent requests by adding
+ThreadingMixIn. Otherwise all requests are handled synchronously which would be bad.
+This was tested by putting a `sleep` in the GET handler and processing other sessions.
+It works. I cannot speak to the performance of this, maybe gevent would do better but
+I am not familiar it. For scalability in production I would certainly recommend running
+this service as a Docker instance and tune by bringing additional instances up and monitoring
+resources to ensure that they are being used efficiently. I intended to provide a Docker image
+of this but you get what you pay for at this stage of the process :).
+
+For a productionn scenario I would most likely split persistence into a separate service and
+add some form of message queuing between the web front end and the persistence for data inserts
+and return a 202. This would accomodate availability issues with the database since the queue would buffer
+the data until the back end recovered. It would also prevent the back end from being overwhelmed under
+unusually high load conditions.
